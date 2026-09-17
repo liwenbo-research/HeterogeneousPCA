@@ -144,7 +144,12 @@ class AutoFE:
         epsilon0=None,
         a=None,
         pair_n_method="min",
+        feature_model=None,
     ):
+        if feature_model is None:
+            # Import lazily because PathFE subclasses FE from this module.
+            from feature_extraction_path import PathFE
+            feature_model = PathFE
         self.epsilon = epsilon
         self.threshold = threshold
         self.n_repeat = n_repeat
@@ -156,9 +161,10 @@ class AutoFE:
         self.epsilon0 = epsilon0
         self.a = a
         self.pair_n_method = pair_n_method
+        self.feature_model = feature_model
 
         self.num_list = []
-        self.fe = FE()
+        self.fe = feature_model()
 
     def fit(self, Data_list):
         if len(Data_list) == 0:
@@ -202,7 +208,7 @@ class AutoFE:
         if epsilon_fit is None:
             epsilon_fit = float(np.sqrt(n_min) / np.log(max(n_min, 3)))
 
-        self.fe = FE().fit(
+        self.fe = self.feature_model().fit(
             Data_list,
             epsilon=epsilon_fit,
             num_list=num_list,

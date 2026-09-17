@@ -91,7 +91,7 @@ if args.perpca_path:
     if perpca_path not in sys.path:
         sys.path.insert(0, perpca_path)
 
-from feature_extraction import FE
+from feature_extraction_path import PathFE
 from pca_utils import PCAUtils
 from apm import APM
 from Circular_Projection import CP
@@ -128,7 +128,7 @@ results_dir = str(project_root / "results" / "simulation" / "simulation-3")
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 threshold_label = f"eps0-{epsilon0:g}-a-{a:g}-pairn-{pair_n_method}".replace(".", "p")
-csv_file = os.path.join(results_dir, f"Algorithm-3-{normal}-{orthonormal}-{ratio}-{threshold_label}-metrics-v2.csv")
+csv_file = os.path.join(results_dir, f"Algorithm-3-pathfe-{normal}-{orthonormal}-{ratio}-{threshold_label}-metrics-v2.csv")
 
 TR = PCAUtils.TR
 
@@ -220,7 +220,7 @@ def run_single(p, n, epsilon, orthonormal, dim, lam, normal, correctCommonFeatur
     rng = np.random.default_rng(seed)
 
     # --- 初始化方法 ---
-    pca = FE()
+    pca = PathFE()
     apm = APM([3] * n_datasets)
     cp = CP([3] * n_datasets)
     gcc = GCC([3] * n_datasets)
@@ -302,7 +302,7 @@ def run_single(p, n, epsilon, orthonormal, dim, lam, normal, correctCommonFeatur
 for p in tqdm(p_list, desc=f"p loop (ratio={ratio})", leave=False, unit="p"):
 
     n = int(round(p / ratio))
-    # FE matches directions when the corrected overlap exceeds 1 - 1 / epsilon.
+    # PathFE matches directions when the corrected overlap exceeds 1 - 1 / epsilon.
     # Here 1 / epsilon = n^epsilon0 * n^(2/a - 1/2).
     epsilon = float(np.power(n, 1 / 2 - 2 / a - epsilon0))
 

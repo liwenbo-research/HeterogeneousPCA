@@ -58,7 +58,10 @@ def fit_rank_methods(X, args, n):
     ranks = [3] * args.n_clients
     epsilon = n ** (0.5 - 2 / args.a - args.epsilon0)
     out = {}
-    for name, cls in (("fe", FE), ("pathfe", PathFE)):
+    rank_methods = [("pathfe", PathFE)]
+    if args.include_fe:
+        rank_methods.append(("fe", FE))
+    for name, cls in rank_methods:
         method = cls()
         method.fit(
             X,
@@ -126,7 +129,7 @@ def error_one(seed, p, args):
     )
 
     rows = []
-    for name in ("fe", "pathfe", "apm", "gcc", "cp", "kt", "ppca"):
+    for name in (*(("fe",) if args.include_fe else ()), "pathfe", "apm", "gcc", "cp", "kt", "ppca"):
         method = methods[name]
         if name == "ppca":
             gf, local_factors, num_common = method
@@ -164,6 +167,7 @@ def error_one(seed, p, args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=("common", "error"), required=True)
+    ap.add_argument("--include-fe", action="store_true", help="also run the original FE comparator")
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--n-runs", type=int, default=50)
     ap.add_argument("--n-jobs", type=int, default=8)

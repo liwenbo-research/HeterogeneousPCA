@@ -1,4 +1,4 @@
-"""FEMNIST real-data experiment for the Simulation-3 FE method."""
+"""FEMNIST real-data experiment for the Simulation-3 methods."""
 
 import argparse
 import csv
@@ -101,10 +101,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", default=str(ROOT / "local" / "data" / "femnist"),
                         help="LEAF data root containing leaf/data/femnist")
-    parser.add_argument("--output", default="results/real_data/femnist/fe-only.csv")
+    parser.add_argument("--output", default="results/real_data/femnist/pathfe-only.csv")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--num-clients", type=int, default=100)
-    parser.add_argument("--method", choices=("fe", "pathfe", "consensusfe", "apm", "cp", "gcc", "tk", "kt", "ppca"), default="fe")
+    parser.add_argument("--method", choices=("fe", "pathfe", "consensusfe", "apm", "cp", "gcc", "tk", "kt", "ppca"), default="pathfe")
     parser.add_argument("--num-spikes", type=int, default=0,
                         help="fixed total rank; 0 estimates one rank per client with FE")
     parser.add_argument("--spike-estimator", choices=("zheng", "yao", "combine"), default="zheng")

@@ -214,7 +214,7 @@ def main():
     p.add_argument("--data-root", default=None,
                    help="dataset root; see docs/data.md")
     p.add_argument("--output", default="results/real_data/reconstruction")
-    p.add_argument("--methods", default="fe,apm,cp,gcc,tk,kt")
+    p.add_argument("--methods", default="pathfe,apm,cp,gcc,tk,kt")
     p.add_argument("--num-clients", type=int, default=100)
     p.add_argument("--num-spikes", type=int, default=55)
     p.add_argument("--shared-rank", type=int, default=2)

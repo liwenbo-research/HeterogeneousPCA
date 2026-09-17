@@ -2,6 +2,8 @@
 
 The entry points here separate data loading/partitioning from model fitting by
 delegating model logic to `src/distributedpca/real_data_methods.py`.
+PathFE is the default common-feature method; pass `--method fe` or include
+`fe` in `--methods` only when reproducing the original FE comparison.
 
 - `Experiment-FEMNIST.py`: train/test client split and one-method evaluation.
 - `Experiment-CIFAR10.py`: CIFAR-10 loading, client partitioning, and one-method

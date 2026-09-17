@@ -22,6 +22,7 @@ from pca_utils import PCAUtils
 
 
 METHOD_IDS = ("fe", "pathfe", "consensusfe", "apm", "cp", "gcc", "tk", "kt")
+DEFAULT_METHOD_IDS = tuple(method for method in METHOD_IDS if method != "fe")
 
 
 def _validate_clients(X_list: Sequence[np.ndarray]) -> list[np.ndarray]:
@@ -106,7 +107,7 @@ def fit_simulation_methods(
     shared_rank: int | None = None,
     target_index: int = 0,
     target_rank: int | None = None,
-    methods: Sequence[str] = METHOD_IDS,
+    methods: Sequence[str] = DEFAULT_METHOD_IDS,
     center: bool = False,
     spike_estimator: str = "zheng",
     epsilon: float | None = None,

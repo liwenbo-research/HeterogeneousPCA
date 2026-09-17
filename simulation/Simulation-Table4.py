@@ -25,13 +25,14 @@ if str(ROOT / "src" / "distributedpca") not in sys.path:
 from Circular_Projection import CP
 from Generalized_C_Corr import GCC
 from apm import APM
-from feature_extraction import FE, AutoFE
+from feature_extraction import AutoFE
+from feature_extraction_path import PathFE
 from knowledge_transfer import KnowledgeTransfer
 from pca_utils import PCAUtils
 
 
-METHODS = ("fe", "apm", "cp", "gcc", "tk", "ppca", "kt", "rpca")
-LABELS = {"fe": "FE", "apm": "APM", "cp": "CP", "gcc": "GCC",
+METHODS = ("pathfe", "apm", "cp", "gcc", "tk", "ppca", "kt", "rpca")
+LABELS = {"pathfe": "PathFE", "apm": "APM", "cp": "CP", "gcc": "GCC",
           "tk": "Tk", "ppca": "PerPCA", "kt": "KnowledgeTransfer",
           "rpca": "RobustPCA"}
 
@@ -107,7 +108,7 @@ def run(args):
     images, masks, x_background = generate_images(args.size, args.seed)
     # Algorithms consume n x p data matrices. Each image contributes size rows.
     X_list = [x.copy() for x in images]
-    # Competing methods retain the Simulation-3 oracle rank; FE alone uses the
+    # Competing methods retain the Simulation-3 oracle rank; PathFE uses the
     # selected spike-number estimator before common-direction matching.
     num_spikes = [args.num_spikes] * len(X_list)
     auto_fe = AutoFE(
@@ -117,13 +118,14 @@ def run(args):
         epsilon0=args.epsilon0,
         a=args.a,
         pair_n_method=args.pair_n_method,
+        feature_model=PathFE,
     )
     auto_fe.fit(X_list)
     fe_num_spikes = auto_fe.num_list
     estimates = {}
 
-    fe = auto_fe.fe
-    estimates["fe"] = (fe.global_factors, fe.est_pf, fe.num_cf)
+    pathfe = auto_fe.fe
+    estimates["pathfe"] = (pathfe.global_factors, pathfe.est_pf, pathfe.num_cf)
     apm = APM(num_spikes); apm.fit([x.copy() for x in X_list])
     estimates["apm"] = (apm.global_factors, apm.local_factor_list, apm.num_common)
     cp = CP(num_spikes); cp.fit([x.copy() for x in X_list])

@@ -33,7 +33,7 @@ for ratio in 0.8 1 1.2; do
         --a "${SIM_A}" \
         --pair-n-method "${SIM_PAIR_N_METHOD}" \
         --perpca_path "${PERPCA_PATH}" \
-        > "Simu-3-ratio-${ratio_label}-orthonormal-${SIM_ORTHONORMAL}.log" 2>&1 &
+        > "Simu-3-pathfe-ratio-${ratio_label}-orthonormal-${SIM_ORTHONORMAL}.log" 2>&1 &
 done
 
 echo "任务已启动：Simulation-3, p/n=0.8,1,1.2；p=100,300,500；orthonormal=${SIM_ORTHONORMAL}。"

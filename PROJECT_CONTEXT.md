@@ -140,6 +140,9 @@ results/simulation/simulation-3/
   Algorithm-3-True-True-1.0-eps0-0p1-a-10-pairn-min-metrics-v2.csv
 ```
 
+This is a historical FE comparison output. The current `Simulation-3.py`
+defaults to PathFE and saves to a separate `Algorithm-3-pathfe-...` file;
+`Simulation-3-new-private.py` includes FE only when `--include-fe` is passed.
 At `p=100/300/500`, FE selected mean common ranks `1.98/2.00/2.00` and
 mean TR `0.97/0.98/0.98` at stored precision. PerPCA and KT use configured
 shared rank 2. The comparison is not fully rank-free:
@@ -182,6 +185,8 @@ Entry points:
 - `real_data/RealData-Reconstruction-Metrics.py`
 
 The shared method adapter is `src/distributedpca/real_data_methods.py`.
+Real-data scripts default to PathFE; FE remains available when explicitly
+selected for historical comparisons. Existing FE result files are unchanged.
 Curated outputs are in:
 
 ```text

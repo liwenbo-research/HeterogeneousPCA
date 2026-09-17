@@ -21,7 +21,9 @@ and configuration columns. Use `--help` for the complete parameter list.
 
 The covariance-spike common-subspace experiment uses 10 clients, shared rank 2,
 client rank 3, `lam=[15,8,3]`, seed 12345, and `p=[100,300,500]`. The selected
-FE configuration is `epsilon0=0.1`, `a=10`, and `pair_n_method=min`.
+The default PathFE configuration is `epsilon0=0.1`, `a=10`, and
+`pair_n_method=min`. `Simulation-3-new-private.py` runs FE only with
+`--include-fe`. Previously curated FE outputs remain historical comparisons.
 `Simulation-3-new-private.py` contains the updated K+1 private-direction
 construction and supports `common` and `error` modes.
 

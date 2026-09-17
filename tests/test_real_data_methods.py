@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -9,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src" / "distributedpca"))
 
 from real_data_methods import fit_simulation_methods
+from feature_extraction import AutoFE, FE
+from feature_extraction_path import PathFE
 
 
 class RealDataMethodTests(unittest.TestCase):
@@ -25,7 +28,7 @@ class RealDataMethodTests(unittest.TestCase):
             target_rank=1,
             epsilon=5.0,
         )
-        self.assertEqual(tuple(estimates), ("fe", "pathfe", "consensusfe", "apm", "cp", "gcc", "tk", "kt"))
+        self.assertEqual(tuple(estimates), ("pathfe", "consensusfe", "apm", "cp", "gcc", "tk", "kt"))
         for estimate in estimates.values():
             self.assertEqual(estimate.global_basis.shape[0], 12)
             self.assertLessEqual(estimate.num_common, 3)
@@ -37,6 +40,20 @@ class RealDataMethodTests(unittest.TestCase):
         estimates = fit_simulation_methods(X_train, num_spike_list=[1, 1], methods=("tk",),
                                            shared_rank=1, center=True)
         self.assertLess(estimates["tk"].reconstruction_error(X_test), 1e-20)
+
+    def test_original_fe_remains_explicitly_available(self):
+        estimates = fit_simulation_methods(self.X_train, num_spike_list=[3, 3, 3],
+                                           methods=("fe",), epsilon=5.0)
+        self.assertEqual(tuple(estimates), ("fe",))
+
+    def test_automatic_ranks_do_not_fit_original_fe(self):
+        with patch.object(FE, "fit", side_effect=AssertionError("FE should not run")):
+            estimates = fit_simulation_methods(self.X_train, methods=("pathfe",),
+                                               spike_estimator="zheng")
+        self.assertEqual(tuple(estimates), ("pathfe",))
+
+    def test_auto_fe_defaults_to_pathfe(self):
+        self.assertIsInstance(AutoFE().fe, PathFE)
 
     def test_rank_oracle_methods_require_shared_rank(self):
         with self.assertRaises(ValueError):

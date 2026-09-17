@@ -177,7 +177,7 @@ def main():
     parser.add_argument("--data-root", default=None,
                         help="dataset root; see docs/data.md")
     parser.add_argument("--output", required=True)
-    parser.add_argument("--methods", default="fe,pathfe,apm,cp,gcc,tk,kt,ppca")
+    parser.add_argument("--methods", default="pathfe,apm,cp,gcc,tk,kt,ppca")
     parser.add_argument("--num-clients", type=int, default=100)
     parser.add_argument("--num-spikes", type=int, default=55)
     parser.add_argument("--shared-rank", type=int, default=2)

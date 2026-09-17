@@ -1,4 +1,4 @@
-# DistributedPCA
+# HeterogeneousPCA
 
 Research code for estimating common features and spike numbers from distributed
 PCA data. The repository contains the algorithms, simulation studies, and
@@ -86,12 +86,12 @@ data as described in [`docs/data.md`](docs/data.md). Example commands:
 export PERPCA_PATH=/path/to/PerPCA
 python real_data/Experiment-FEMNIST.py \
   --data-root /path/to/leaf-root --seed 12345 --num-clients 100 \
-  --method fe --num-spikes 55 --epsilon0 0.1 --a 10 \
-  --pair-n-method min --output results/real_data/femnist/fe-reproduced.csv
+  --num-spikes 55 --epsilon0 0.1 --a 10 \
+  --pair-n-method min --output results/real_data/femnist/pathfe-reproduced.csv
 
 python real_data/Experiment-CIFAR10.py \
   --data-root /path/to/cifar-10-batches-py --seed 12345 \
-  --partition dirichlet --dirichlet-alpha 5 --method pathfe \
+  --partition dirichlet --dirichlet-alpha 5 \
   --num-spikes 55 --epsilon0 0.1 --a 10 \
   --output results/real_data/cifar10/pathfe-reproduced.csv
 ```
