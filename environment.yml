@@ -1,0 +1,21 @@
+name: distributedpca-sim
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - statsmodels
+  - pytest
+  - tqdm
+  - joblib
+  - pytorch
+  - cpuonly
+  - pip
+  - pip:
+      - TracyWidom

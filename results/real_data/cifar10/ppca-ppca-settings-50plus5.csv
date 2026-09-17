@@ -1,0 +1,3 @@
+method,split,global_rank,local_rank,reconstruction_error_global,reconstruction_error_global_plus_local
+ppca,train,50,5,29.906457247137464,28.53422915336671
+ppca,test,50,5,29.96923039485935,28.761151102921744

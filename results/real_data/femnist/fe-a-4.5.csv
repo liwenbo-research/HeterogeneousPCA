@@ -1,0 +1,3 @@
+method,split,num_clients,num_spikes,num_common,a,epsilon0,reconstruction_error_global,reconstruction_error_global_plus_local
+fe,train,100,55,1,4.5,0.1,12.849085271119042,0.7359574865660519
+fe,test,100,55,1,4.5,0.1,12.868254992586966,1.7541133072977055

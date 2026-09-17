@@ -1,0 +1,41 @@
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local environments and machine-specific configuration
+.venv/
+venv/
+env/
+.conda/
+.env
+.env.*
+
+# Runtime logs and generated scratch output
+logs/
+*.log
+*.tmp
+*.swp
+
+# Local/raw datasets and external dependencies
+data/
+datasets/
+external/
+PerPCA/
+
+# Local vendored dependency and datasets (kept on this machine only)
+local/
+
+# Generated results not explicitly curated for release
+results/**/generated/
+
+# Local provenance archive; only its public-facing explanation is tracked
+archive/**
+!archive/README.md
+
+# Local agent state
+.agents/
+.codex/
