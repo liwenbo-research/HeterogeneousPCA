@@ -108,8 +108,8 @@ def run(args):
     images, masks, x_background = generate_images(args.size, args.seed)
     # Algorithms consume n x p data matrices. Each image contributes size rows.
     X_list = [x.copy() for x in images]
-    # Competing methods retain the Simulation-3 oracle rank; PathFE uses the
-    # selected spike-number estimator before common-direction matching.
+    # Competing methods retain the Simulation-3 oracle rank unless the
+    # FE-rank transfer comparison is explicitly requested.
     num_spikes = [args.num_spikes] * len(X_list)
     auto_fe = AutoFE(
         epsilon=args.fe_epsilon,
@@ -126,6 +126,9 @@ def run(args):
 
     pathfe = auto_fe.fe
     estimates["pathfe"] = (pathfe.global_factors, pathfe.est_pf, pathfe.num_cf)
+    transfer_common = int(pathfe.num_cf)
+    transfer_private = [int(np.asarray(local).shape[1]) for local in pathfe.est_pf]
+    transfer_spikes = [transfer_common + rank for rank in transfer_private]
     apm = APM(num_spikes); apm.fit([x.copy() for x in X_list])
     estimates["apm"] = (apm.global_factors, apm.local_factor_list, apm.num_common)
     cp = CP(num_spikes); cp.fit([x.copy() for x in X_list])
@@ -137,12 +140,18 @@ def run(args):
     if args.perpca_path:
         sys.path.insert(0, str(Path(args.perpca_path).expanduser().resolve()))
     from algs import personalized_pca_dgd
-    ppca_args = {"ngc": 2, "nlc": 1, "num_client": len(X_list), "global_epochs": args.ppca_epochs,
+    ppca_args = {"ngc": transfer_common if args.fe_ranks_for_baselines else 2,
+                 "nlc": transfer_private if args.fe_ranks_for_baselines else 1,
+                 "num_client": len(X_list), "global_epochs": args.ppca_epochs,
                  "eta": .1, "rho": 1.0}
     U, V, _ = personalized_pca_dgd(X_list, ppca_args)
-    estimates["ppca"] = (U[0] * np.sqrt(args.size), V, 2)
+    ppca_common = ppca_args["ngc"]
+    estimates["ppca"] = (U[0] * np.sqrt(args.size), V, ppca_common)
 
-    kt = KnowledgeTransfer(num_spikes, target_index=0, shared_rank=2, target_rank=2)
+    kt_ranks = transfer_spikes if args.fe_ranks_for_baselines else num_spikes
+    kt_common = transfer_common if args.fe_ranks_for_baselines else 2
+    kt = KnowledgeTransfer(kt_ranks, target_index=0, shared_rank=kt_common,
+                           target_rank=kt_ranks[0] if args.fe_ranks_for_baselines else 2)
     kt.fit([x.copy() for x in X_list])
     # KT now estimates per-client local directions as well as the shared
     # subspace, so evaluate both global and global-plus-local reconstructions.
@@ -171,7 +180,10 @@ def run(args):
                 plt.imsave(image_path, np.clip(recon, 0, 1), cmap="gray", vmin=0, vmax=1)
                 rows.append({"method": LABELS[method], "method_id": method,
                              "reconstruction_type": reconstruction_type, "image": i + 1,
-                             "num_common": int(num_common), "fe_num_spikes": str(fe_num_spikes),
+                             "num_common": int(num_common), "fe_num_common": transfer_common,
+                             "fe_private_ranks": str(transfer_private),
+                             "fe_num_spikes": str(fe_num_spikes),
+                             "rank_transfer_source": "PathFE",
                              "spike_estimator": args.spike_estimator, "fe_epsilon": args.fe_epsilon,
                              "fe_epsilon0": args.epsilon0, "fe_a": args.a,
                              "mse": mse, "psnr": psnr, "output": str(image_path)})
@@ -199,6 +211,8 @@ def main():
     parser.add_argument("--combine-repeats", type=int, default=50)
     parser.add_argument("--pair-n-method", choices=("min", "harmonic"), default="min")
     parser.add_argument("--ppca-epochs", type=int, default=50)
+    parser.add_argument("--fe-ranks-for-baselines", action="store_true",
+                        help="pass PathFE-estimated common/private ranks to KT and PerPCA")
     parser.add_argument("--perpca-path", default=os.environ.get(
         "PERPCA_PATH", str(ROOT / "local" / "perpca")))
     parser.add_argument("--output", default="results/real_data/table4")

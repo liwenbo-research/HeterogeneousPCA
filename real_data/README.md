@@ -11,5 +11,9 @@ PathFE is the default common-feature method; pass `--method fe` or include
 - `RealData-Reconstruction.py`: exports reconstruction images and detail CSVs.
 - `RealData-Reconstruction-Metrics.py`: batch held-out reconstruction metrics.
 
+- `UnitedStatesHousing-PathFE.py`: estimates state-specific ranks, fits PathFE,
+  and exports ranks, method metrics, and residual-correlation plots. It reads
+  the housing price CSVs retained under `archive/paper-feature-extraction/`.
+
 Scripts default to the local bundle in `../local/data/`; pass `--data-root` to
 use another copy. See `../docs/data.md` for expected layouts and commands.

@@ -15,9 +15,13 @@ class ZhengEstimate(SpikeNum):
         D_inv_sqrt = np.diag((np.diag(cov) + eps) ** (-0.5))
 
         # 构造相关矩阵
-        cor = D_inv_sqrt @ cov @ D_inv_sqrt
-        S = np.linalg.svd(cor, compute_uv=False)
-        return S
+        standardized = X @ D_inv_sqrt
+        if n_k < X.shape[1]:
+            gram = (standardized @ standardized.T) / n_k
+            values = np.linalg.eigvalsh((gram + gram.T) * 0.5)[::-1]
+            return np.pad(np.maximum(values, 0.0), (0, X.shape[1] - n_k))
+        cor = (standardized.T @ standardized) / n_k
+        return np.linalg.svd(cor, compute_uv=False)
     
 
     def correct_eigenvalues(self,S,rmax,p,n):

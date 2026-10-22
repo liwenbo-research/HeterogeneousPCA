@@ -78,7 +78,7 @@ def _projector(factors, p):
     return factors @ np.linalg.pinv(factors.T @ factors) @ factors.T
 
 
-def _fit_perpca(train, args):
+def _fit_perpca(train, args, global_rank=None, local_ranks=None):
     """Fit the external PerPCA implementation and return global/local bases."""
     perpca_path = args.perpca_path or os.environ.get("PERPCA_PATH")
     if not perpca_path:
@@ -89,7 +89,8 @@ def _fit_perpca(train, args):
     np.random.seed(args.seed)
     ppca_args = {
         "method": "power", "num_client": len(train),
-        "ngc": args.ppca_global_rank, "nlc": args.ppca_local_rank,
+        "ngc": args.ppca_global_rank if global_rank is None else int(global_rank),
+        "nlc": args.ppca_local_rank if local_ranks is None else [int(x) for x in local_ranks],
         "num_dp_per_client": int(train[0].shape[0]),
         "global_epochs": args.ppca_epochs, "eta": 0.1, "rho": args.ppca_rho,
         "decay": 0.9, "logprogress": 0, "aggregationinit": 1,
@@ -116,7 +117,7 @@ def _project_reconstruction(data, global_basis, local_basis=None, means=None):
 def run(args):
     rng = np.random.default_rng(args.seed)
     if args.dataset == "femnist":
-        sys.path.insert(0, str(Path(perpca_path).expanduser().resolve()))
+        sys.path.insert(0, str(Path(args.perpca_path).expanduser().resolve()))
         from mnist import read_dir
         _, _, raw = read_dir(str(Path(args.data_root) / "leaf/data/femnist/data/all_data"), maxuser=args.num_clients)
         train, test = [], []
@@ -141,15 +142,48 @@ def run(args):
     ppca_requested = "ppca" in methods
     simulation_methods = tuple(method for method in methods if method != "ppca")
     ranks = [args.num_spikes] * len(train)
-    estimates = fit_simulation_methods(
-        train, methods=simulation_methods, num_spike_list=ranks, shared_rank=args.shared_rank,
-        target_rank=args.target_rank, center=args.center, epsilon0=args.epsilon0, a=args.a,
-    ) if simulation_methods else {}
+    transfer_common = None
+    transfer_private = None
+    if args.transfer_pathfe_ranks:
+        pathfe = fit_simulation_methods(
+            train, methods=("pathfe",), num_spike_list=ranks,
+            center=args.center, epsilon0=args.epsilon0, a=args.a,
+        )["pathfe"]
+        ranks = pathfe.num_spike_list
+        transfer_common = int(pathfe.num_common)
+        transfer_private = [int(basis.shape[1]) for basis in pathfe.local_bases]
+        transfer_ranks = [transfer_common + rank for rank in transfer_private]
+        base_methods = tuple(method for method in simulation_methods
+                             if method not in ("pathfe", "kt"))
+        estimates = fit_simulation_methods(
+            train, methods=base_methods, num_spike_list=ranks, shared_rank=args.shared_rank,
+            target_rank=args.target_rank, center=args.center, epsilon0=args.epsilon0, a=args.a,
+        ) if base_methods else {}
+        if "pathfe" in simulation_methods:
+            estimates["pathfe"] = pathfe
+        if "kt" in simulation_methods:
+            estimates["kt"] = fit_simulation_methods(
+                train, methods=("kt",), num_spike_list=transfer_ranks,
+                shared_rank=transfer_common, target_rank=transfer_ranks[0],
+                center=args.center, epsilon0=args.epsilon0, a=args.a,
+            )["kt"]
+    else:
+        estimates = fit_simulation_methods(
+            train, methods=simulation_methods, num_spike_list=ranks, shared_rank=args.shared_rank,
+            target_rank=args.target_rank, center=args.center, epsilon0=args.epsilon0, a=args.a,
+        ) if simulation_methods else {}
     if ppca_requested:
         means = [x.mean(axis=0) if args.center else np.zeros(x.shape[1]) for x in train]
         fitted_train = [x - mean for x, mean in zip(train, means)]
-        global_basis, local_bases = _fit_perpca(fitted_train, args)
-        estimates["ppca"] = (global_basis, local_bases, args.ppca_global_rank)
+        global_basis, local_bases = _fit_perpca(
+            fitted_train, args,
+            global_rank=transfer_common,
+            local_ranks=transfer_private,
+        )
+        estimates["ppca"] = (
+            global_basis, local_bases,
+            args.ppca_global_rank if transfer_common is None else transfer_common,
+        )
     out = Path(args.output) / args.dataset
     out.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -157,12 +191,13 @@ def run(args):
     reconstructed = {}
     for method, estimate in estimates.items():
         if method == "ppca":
-            global_basis, local_bases, _ = estimate
+            global_basis, local_bases, num_common = estimate
             means = [x.mean(axis=0) if args.center else np.zeros(x.shape[1]) for x in train]
             global_all = _project_reconstruction(test, global_basis, means=means)
             joint_all = _project_reconstruction(test, global_basis, local_bases, means=means)
             reconstructed[method] = (global_all, joint_all)
         else:
+            num_common = estimate.num_common
             reconstructed[method] = (estimate.reconstruct(test, include_local=False),
                                       estimate.reconstruct(test, include_local=True))
     for client, data in enumerate(test):
@@ -173,7 +208,8 @@ def run(args):
             _save_image(original, original_path, args.dataset)
             rows.append({"dataset": args.dataset, "method": "original", "reconstruction_type": "original",
                          "client": client, "test_index": int(local_index), "mse": 0.0,
-                         "psnr": float("inf"), "output": str(original_path)})
+                         "psnr": float("inf"), "num_common": "", "private_ranks": "",
+                         "rank_source": "", "output": str(original_path)})
         for method, (global_all, joint_all) in reconstructed.items():
             recon_global = global_all[client]
             recon_joint = joint_all[client]
@@ -186,7 +222,10 @@ def run(args):
                     path = out / f"{method}-{kind}-c{client:03d}-i{local_index:03d}.png"
                     _save_image(image, path, args.dataset)
                     rows.append({"dataset": args.dataset, "method": method, "reconstruction_type": kind,
-                                 "client": client, "test_index": int(local_index), "mse": mse,
+                                 "client": client, "test_index": int(local_index), "num_common": num_common,
+                                 "private_ranks": "" if transfer_private is None else str(transfer_private),
+                                 "rank_source": "PathFE" if args.transfer_pathfe_ranks else "configured",
+                                 "mse": mse,
                                  "psnr": psnr, "output": str(path)})
         for local_index in chosen:
             panels = [_image_array(data[local_index], args.dataset)]
@@ -231,6 +270,8 @@ def main():
     p.add_argument("--ppca-local-rank", type=int, default=5)
     p.add_argument("--ppca-epochs", type=int, default=50)
     p.add_argument("--ppca-rho", type=float, default=10.0)
+    p.add_argument("--transfer-pathfe-ranks", action="store_true",
+                   help="use PathFE's common and client-private ranks for KT and PerPCA")
     args = p.parse_args()
     if args.data_root is None:
         args.data_root = str(ROOT / "local" / "data" / ("cifar10" if args.dataset == "cifar10" else "femnist"))

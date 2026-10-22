@@ -43,10 +43,9 @@ class KnowledgeTransfer:
         private_rank = max(self.target_rank - shared_rank, 0)
         if private_rank:
             X = np.asarray(data_list[self.target_index], dtype=float)
-            complement = np.eye(p) - shared @ shared.T
-            cov = complement @ (X.T @ X / max(X.shape[0], 1)) @ complement
-            vals, vecs = np.linalg.eigh(cov)
-            private = vecs[:, np.argsort(vals)[::-1][:private_rank]]
+            residual = X - (X @ shared) @ shared.T
+            _, _, vt = np.linalg.svd(residual, full_matrices=False)
+            private = vt[:private_rank].T
         else:
             private = np.zeros((p, 0))
 
@@ -59,16 +58,15 @@ class KnowledgeTransfer:
         # the orthogonal complement of the transferred shared subspace.
         self.local_factor_list = []
         self.local_projector_list = []
-        complement = np.eye(p) - shared @ shared.T
         for i, data in enumerate(data_list):
             X = np.asarray(data, dtype=float)
             local_rank = max(min(self.num_spike_list[i], p) - shared_rank, 0)
             if local_rank == 0:
                 local = np.zeros((p, 0))
             else:
-                cov = complement @ (X.T @ X / max(X.shape[0], 1)) @ complement
-                vals, vecs = np.linalg.eigh(cov)
-                local = vecs[:, np.argsort(vals)[::-1][:local_rank]]
+                residual = X - (X @ shared) @ shared.T
+                _, _, vt = np.linalg.svd(residual, full_matrices=False)
+                local = vt[:local_rank].T
             self.local_factor_list.append(np.sqrt(p) * local)
             self.local_projector_list.append(local @ local.T)
         return self

@@ -37,8 +37,10 @@ class LiuEstimate(SpikeNum):
             return 0
 
         gaps = eigvals[:-1] - eigvals[1:]
-        theta = np.exp(np.clip(gaps, -700, 700))
-        tail_sum = np.cumsum(theta[::-1])[::-1]
+        # Liu et al. (2023), Eq. (17) and the pseudo-EDB case: the tail
+        # average is of theta_i^2, not theta_i.
+        theta_squared = np.exp(np.clip(2 * gaps, -700, 700))
+        tail_sum = np.cumsum(theta_squared[::-1])[::-1]
         ks = np.arange(1, w + 1)
         tail_counts = spectrum_size - ks - 1
         tilde_theta = tail_sum[ks] / tail_counts

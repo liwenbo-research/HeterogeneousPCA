@@ -79,13 +79,30 @@ distribution.
 | Group | Spikes | Bulk model | Seed |
 | --- | --- | --- | ---: |
 | `s2-c1` | `[8,6]` | diagonal values `[1.5,1.2]` | `449929265` |
-| `s2-c2` | `[8,6]` | diagonal plus a 40-dimensional equicorrelated block (`variance=0.15`, `rho=0.03`) | `2611067214` |
-| `s1-c3` | `[6,4]` | Gamma (`theta=10`, `sigma_sq=1`) plus the same correlated block | `20261101` |
+| `s2-c2` | `[8,6]` | diagonal bulk plus a 40-dimensional AR(1) block (`variance=0.15`, `rho=0.03`) | `2611067214` |
+| `s1-c3` | `[6,4]` | Gamma bulk (`theta=10`, `sigma_sq=1`) plus a 40-dimensional AR(1) block (`variance=0.15`, `rho=0.30`) | `20261101` |
 
 Each group includes `p/n={0.8,1.0,1.2}`, Normal and standardized
 `Exp(1)-1` innovations, and `p={200,300,400}` after the recorded supplemental
 `p=300` runs. Curated CSVs are in
 `results/simulation/simulation-1/`.
+
+An exploratory pure-AR(1) variant is available as `--bulk-model ar1`. It keeps
+the `s2-c2` spike setup but replaces all non-spike coordinates with one AR(1)
+bulk block; `--ar1-rho 0.3` gives the requested correlation and the default
+marginal variance is 1.0.
+
+For `s2-c2`, the two diagonal bulk groups have dimensions `p/2-21` each,
+followed by the 40-dimensional correlated block. For `s1-c3`, the Gamma
+diagonal component has dimension `m=p-42`, followed by the correlated block.
+The Gamma residual entries are iid with shape `10` and scale `0.1` (equivalently
+the code parameters `theta=10`, `sigma_sq=1`, so their mean is one).
+
+Both correlated blocks use AR(1) covariance
+`Sigma[i,j] = variance * rho**abs(i-j)`. The former equicorrelated block is
+available only through the explicit `--correlated-bulk-structure equicorr`
+compatibility option and is not an active retained configuration because it
+creates an artificial rank-one small spike.
 
 Threshold definitions:
 

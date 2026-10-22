@@ -7,12 +7,27 @@ the core implementation in `src/distributedpca/` and write new outputs below
 ## Simulation-1
 
 `Simulation-1.py` compares MBE, Combine, Yao, Liu-EDB, general BEMA, and
-Zheng/ACT under diagonal, correlated, Gamma-correlated, multicluster, and
-Toeplitz bulk models. The retained public configurations are the three groups
+Zheng/ACT under diagonal, correlated, Gamma-correlated, pure AR(1), multicluster,
+and Toeplitz bulk models. The retained public configurations are the three groups
 `s2c1`, `s2c2`, and `s1c3`, with ratios 0.8, 1.0, and 1.2. The exact commands
 used for the retained runs are in
 `results/simulation/simulation-1/arguments.txt`; do not reconstruct them from
 filenames because thresholds vary by distribution and ratio.
+
+An exploratory pure AR(1) residual bulk based on `s2-c2` is available with
+`--bulk-model ar1 --ar1-rho 0.3`. It replaces the diagonal bulk and the small
+correlated block with one AR(1) block spanning all non-spike coordinates. The
+default marginal variance is 1.0 and can be changed with `--ar1-variance`.
+For the ratio-1 Normal configuration:
+
+```bash
+python simulation/Simulation-1.py --seed 2611067214 --ratio 1.0 \
+  --distribution normal --spike-values 8,6 \
+  --scenario-name s2-c2-pure-ar1-rho0p3-ratio1p0 \
+  --bulk-model ar1 --ar1-variance 1.0 --ar1-rho 0.3 \
+  --combine-rule or --epsilon0 0.03 --a1 20 --a2 16 \
+  --p-list 200 300 400 --n-runs 100 --n_jobs 8
+```
 
 All retained runs use 100 repetitions. The output CSV records method metrics
 and configuration columns. Use `--help` for the complete parameter list.

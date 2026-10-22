@@ -5,6 +5,32 @@ from scipy.linalg import block_diag
 
 class PCAUtils:
     @staticmethod
+    def create_sigma_matrix_ar1_bulk(dim, lam, p, variance=1.0, rho=0.3):
+        """Create fixed spike blocks followed by one full AR(1) residual bulk."""
+        dim = [int(value) for value in dim]
+        lam = np.asarray(lam, dtype=float)
+        if len(dim) != len(lam) or np.any(lam <= 0):
+            raise ValueError("dim and lam must have matching positive entries")
+        if variance <= 0 or not (-1 < rho < 1):
+            raise ValueError("variance must be positive and rho must lie in (-1, 1)")
+        residual_size = p - sum(dim)
+        if residual_size < 1:
+            raise ValueError("p must exceed the total spike-block dimension")
+
+        spike_blocks = []
+        for size, strength in zip(dim, lam):
+            scale = (strength - 0.25) / size
+            spike_blocks.append(scale * np.ones((size, size)) + 0.25 * np.eye(size))
+        distances = np.abs(
+            np.arange(residual_size)[:, None] - np.arange(residual_size)[None, :]
+        )
+        ar1_bulk = variance * np.power(rho, distances)
+        sigma = block_diag(*spike_blocks, ar1_bulk)
+        if sigma.shape != (p, p):
+            raise RuntimeError(f"Sigma shape mismatch: {sigma.shape}")
+        return sigma
+
+    @staticmethod
     def create_sigma_matrix_custom_bulk(dim, lam, p, bulk_values, nuisance_blocks):
         """Keep the existing block spikes and append diagonal/nuisance bulk blocks."""
         scale = [(lam[i] - 0.25) / dim[i] for i in range(len(lam))]
@@ -50,7 +76,8 @@ class PCAUtils:
     @staticmethod
     def create_sigma_matrix_gamma_correlated_bulk(
         dim, lam, p, theta, sigma_sq=1.0, correlated_size=40,
-        correlated_variance=0.15, correlated_rho=0.03, random_state=None,
+        correlated_variance=0.15, correlated_rho=0.03,
+        correlated_structure="ar1", random_state=None,
     ):
         """Fixed block spikes with Gamma residuals plus a weak correlated block.
 
@@ -65,6 +92,8 @@ class PCAUtils:
         if len(dim) != len(lam) or np.any(lam <= 0):
             raise ValueError("dim and lam must have matching positive entries")
         correlated_size = int(correlated_size)
+        if correlated_structure not in ("ar1", "equicorr"):
+            raise ValueError("correlated_structure must be 'ar1' or 'equicorr'")
         remaining = p - sum(dim)
         if correlated_size < 2 or correlated_size >= remaining:
             raise ValueError("correlated_size must fit inside the residual dimensions")
@@ -80,7 +109,17 @@ class PCAUtils:
         diagonal_size = remaining - correlated_size
         residual_variances = rng.gamma(shape=theta, scale=sigma_sq / theta, size=diagonal_size)
         diagonal_block = np.diag(residual_variances)
-        correlation = (1 - correlated_rho) * np.eye(correlated_size) + correlated_rho * np.ones((correlated_size, correlated_size))
+        distances = np.abs(
+            np.arange(correlated_size)[:, None]
+            - np.arange(correlated_size)[None, :]
+        )
+        if correlated_structure == "ar1":
+            correlation = np.power(correlated_rho, distances)
+        else:
+            correlation = (
+                (1 - correlated_rho) * np.eye(correlated_size)
+                + correlated_rho * np.ones((correlated_size, correlated_size))
+            )
         correlated_block = correlated_variance * correlation
         return block_diag(*spike_blocks, diagonal_block, correlated_block)
 
@@ -94,6 +133,7 @@ class PCAUtils:
         correlated_bulk_size=0,
         correlated_bulk_variance=0.15,
         correlated_bulk_rho=0.0,
+        correlated_bulk_structure="ar1",
     ):
         scale = [(lam[i] - 0.25) / dim[i] for i in range(len(lam))]
 
@@ -112,6 +152,8 @@ class PCAUtils:
             raise ValueError(f"p={p} 不足以容纳 spike 维度 {dim_spike_total}")
 
         correlated_bulk_size = int(correlated_bulk_size)
+        if correlated_bulk_structure not in ("ar1", "equicorr"):
+            raise ValueError("correlated_bulk_structure must be 'ar1' or 'equicorr'")
         if not 0 <= correlated_bulk_size < dim_remaining:
             raise ValueError("correlated_bulk_size 必须在 [0, 剩余维度) 内")
         if correlated_bulk_variance <= 0:
@@ -144,10 +186,17 @@ class PCAUtils:
             block_bulk_list.append(block)
 
         if correlated_bulk_size:
-            correlation = (
-                (1 - correlated_bulk_rho) * np.eye(correlated_bulk_size)
-                + correlated_bulk_rho * np.ones((correlated_bulk_size, correlated_bulk_size))
+            distances = np.abs(
+                np.arange(correlated_bulk_size)[:, None]
+                - np.arange(correlated_bulk_size)[None, :]
             )
+            if correlated_bulk_structure == "ar1":
+                correlation = np.power(correlated_bulk_rho, distances)
+            else:
+                correlation = (
+                    (1 - correlated_bulk_rho) * np.eye(correlated_bulk_size)
+                    + correlated_bulk_rho * np.ones((correlated_bulk_size, correlated_bulk_size))
+                )
             block_bulk_list.append(correlated_bulk_variance * correlation)
 
         Sigma = block_diag(block_spike, *block_bulk_list)

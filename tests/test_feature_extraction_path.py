@@ -6,11 +6,23 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src" / "distributedpca"))
-from feature_extraction_path import extract_complete_paths
+from feature_extraction_path import _top_projected_basis, extract_complete_paths
 from pca_utils import PCAUtils
 
 
 class PathExtractionTests(unittest.TestCase):
+    def test_projected_local_basis_gram_matches_covariance_eigenspace(self):
+        rng = np.random.default_rng(7)
+        X = rng.normal(size=(8, 13))
+        Q, _ = np.linalg.qr(rng.normal(size=(13, 3)))
+        complement = np.eye(13) - Q @ Q.T
+        actual = _top_projected_basis(X, complement, 3)
+        residual = complement @ (X.T @ X / len(X)) @ complement
+        values, vectors = np.linalg.eigh(residual)
+        expected = vectors[:, np.argsort(values)[::-1][:3]]
+        np.testing.assert_allclose(actual @ actual.T, expected @ expected.T,
+                                   rtol=1e-10, atol=1e-10)
+
     def test_finds_all_vertex_disjoint_complete_paths(self):
         pairs = [
             np.array([[0, 0], [0, 1], [1, 1]]),

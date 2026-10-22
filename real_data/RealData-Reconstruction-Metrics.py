@@ -5,6 +5,7 @@ the individual experiments and writes one comparable train/test summary.
 """
 
 import argparse
+import ast
 import csv
 import importlib.util
 import os
@@ -68,7 +69,7 @@ def _load_cifar(data_root, partition, alpha, num_clients, seed):
     return [x for x, _ in train], [x for x, _ in test]
 
 
-def _fit_ppca(train, args):
+def _fit_ppca(train, args, global_rank=None, local_ranks=None):
     perpca_path = args.perpca_path or os.environ.get("PERPCA_PATH")
     if not perpca_path:
         raise ValueError("PerPCA requires --perpca-path or PERPCA_PATH")
@@ -79,7 +80,8 @@ def _fit_ppca(train, args):
     means = [X.mean(axis=0) if args.center else np.zeros(X.shape[1]) for X in train]
     fitted = [X - mean for X, mean in zip(train, means)]
     config = {"method": "power", "num_client": len(train),
-              "ngc": args.ppca_global_rank, "nlc": args.ppca_local_rank,
+              "ngc": args.ppca_global_rank if global_rank is None else int(global_rank),
+              "nlc": args.ppca_local_rank if local_ranks is None else [int(x) for x in local_ranks],
               "num_dp_per_client": int(train[0].shape[0]),
               "global_epochs": args.ppca_epochs, "eta": 0.1,
               "rho": args.ppca_rho, "decay": 0.9, "logprogress": 0,
@@ -119,6 +121,8 @@ def _error(data, reconstructed):
 
 def run(args):
     if args.dataset == "femnist":
+        if args.perpca_path:
+            sys.path.insert(0, str(Path(args.perpca_path).expanduser().resolve()))
         train, test = _load_femnist(args.data_root, args.num_clients,
                                     args.train_fraction, args.seed)
     else:
@@ -131,14 +135,70 @@ def run(args):
     methods = tuple(x.strip().lower() for x in args.methods.split(",") if x.strip())
     ppca = "ppca" in methods
     simulation_methods = tuple(x for x in methods if x != "ppca")
-    ranks = [args.num_spikes] * len(train)
-    estimates = fit_simulation_methods(
-        train, methods=simulation_methods, num_spike_list=ranks,
-        shared_rank=args.shared_rank, target_rank=args.target_rank,
-        center=args.center, epsilon0=args.epsilon0, a=args.a,
-        pair_n_method=args.pair_n_method,
-    ) if simulation_methods else {}
-    ppca_fit = _fit_ppca(train, args) if ppca else None
+    ranks = ([args.num_spikes] * len(train)
+             if args.num_spikes > 0 else None)
+    transfer_common = None
+    transfer_private = None
+    if args.reference_total_ranks:
+        if args.transfer_pathfe_ranks or args.reference_common_rank is None:
+            raise ValueError("explicit reference ranks require a common rank and cannot be combined with automatic rank transfer")
+        transfer_common = int(args.reference_common_rank)
+        source = Path(args.reference_total_ranks)
+        raw = source.read_text().strip() if source.is_file() else args.reference_total_ranks
+        ranks = [int(x) for x in ast.literal_eval(raw)]
+        if len(ranks) != len(train) or any(r < transfer_common for r in ranks):
+            raise ValueError("reference total ranks must match clients and exceed common rank")
+        transfer_private = [r - transfer_common for r in ranks]
+        estimates = fit_simulation_methods(
+            train, methods=simulation_methods, num_spike_list=ranks,
+            shared_rank=transfer_common, target_rank=ranks[0],
+            center=args.center, epsilon0=args.epsilon0, a=args.a,
+            pair_n_method=args.pair_n_method,
+        ) if simulation_methods else {}
+    elif args.transfer_pathfe_ranks:
+        pathfe = fit_simulation_methods(
+            train, methods=("pathfe",), num_spike_list=ranks,
+            spike_estimator=args.spike_estimator,
+            center=args.center, epsilon0=args.epsilon0, a=args.a,
+            pair_n_method=args.pair_n_method,
+        )["pathfe"]
+        ranks = pathfe.num_spike_list
+        transfer_common = int(pathfe.num_common)
+        transfer_private = [int(basis.shape[1]) for basis in pathfe.local_bases]
+        transfer_ranks = [transfer_common + rank for rank in transfer_private]
+        base_methods = tuple(method for method in simulation_methods
+                             if method not in ("pathfe", "kt"))
+        estimates = fit_simulation_methods(
+            train, methods=base_methods, num_spike_list=ranks,
+            shared_rank=args.shared_rank, target_rank=args.target_rank,
+            spike_estimator=args.spike_estimator,
+            center=args.center, epsilon0=args.epsilon0, a=args.a,
+            pair_n_method=args.pair_n_method,
+        ) if base_methods else {}
+        if "pathfe" in simulation_methods:
+            estimates["pathfe"] = pathfe
+        if "kt" in simulation_methods:
+            estimates["kt"] = fit_simulation_methods(
+                train, methods=("kt",), num_spike_list=transfer_ranks,
+                shared_rank=transfer_common, target_rank=transfer_ranks[0],
+                center=args.center, epsilon0=args.epsilon0, a=args.a,
+                pair_n_method=args.pair_n_method,
+            )["kt"]
+    else:
+        estimates = fit_simulation_methods(
+            train, methods=simulation_methods, num_spike_list=ranks,
+            shared_rank=args.shared_rank, target_rank=args.target_rank,
+            spike_estimator=args.spike_estimator,
+            center=args.center, epsilon0=args.epsilon0, a=args.a,
+            pair_n_method=args.pair_n_method,
+        ) if simulation_methods else {}
+        if ranks is None and estimates:
+            ranks = next(iter(estimates.values())).num_spike_list
+    ppca_fit = _fit_ppca(
+        train, args,
+        global_rank=transfer_common,
+        local_ranks=transfer_private,
+    ) if ppca else None
 
     rows = []
     for method in methods:
@@ -147,16 +207,30 @@ def run(args):
                 basis, local, means = ppca_fit
                 global_recon = _ppca_reconstruct(data, basis, local, means, False)
                 joint_recon = _ppca_reconstruct(data, basis, local, means, True)
-                num_common = args.ppca_global_rank
+                num_common = args.ppca_global_rank if transfer_common is None else transfer_common
+                private_ranks = [int(np.asarray(basis).shape[-1]) for basis in local]
             else:
                 estimate = estimates[method]
                 global_recon = estimate.reconstruct(data, include_local=False)
                 joint_recon = estimate.reconstruct(data, include_local=True)
                 num_common = estimate.num_common
+                private_ranks = ([int(basis.shape[1]) for basis in estimate.local_bases]
+                                 if estimate.local_bases is not None else [0] * len(data))
             global_error, global_mse = _error(data, global_recon)
             joint_error, joint_mse = _error(data, joint_recon)
             rows.append({"dataset": args.dataset, "method": method, "split": split,
                          "num_clients": len(data), "num_common": num_common,
+                         "epsilon0": args.epsilon0, "a": args.a,
+                         "spike_estimator": args.spike_estimator,
+                         "pair_n_method": args.pair_n_method,
+                         "centered": args.center,
+                         "actual_private_ranks": str(private_ranks),
+                         "actual_total_ranks": str([num_common + r for r in private_ranks]),
+                         "rank_source": ("explicit reference" if args.reference_total_ranks else
+                                         "PathFE" if args.transfer_pathfe_ranks else
+                                         "Zheng" if args.num_spikes <= 0 else "configured"),
+                         "private_ranks": "" if transfer_private is None else str(transfer_private),
+                         "num_spikes": str(ranks),
                          "reconstruction_error_global": global_error,
                          "reconstruction_mse_global": global_mse,
                          "reconstruction_error_global_plus_local": joint_error,
@@ -180,6 +254,8 @@ def main():
     parser.add_argument("--methods", default="pathfe,apm,cp,gcc,tk,kt,ppca")
     parser.add_argument("--num-clients", type=int, default=100)
     parser.add_argument("--num-spikes", type=int, default=55)
+    parser.add_argument("--spike-estimator", choices=("zheng", "yao", "combine"),
+                        default="zheng")
     parser.add_argument("--shared-rank", type=int, default=2)
     parser.add_argument("--target-rank", type=int, default=None)
     parser.add_argument("--train-fraction", type=float, default=.8)
@@ -196,6 +272,11 @@ def main():
     parser.add_argument("--ppca-local-rank", type=int, default=5)
     parser.add_argument("--ppca-epochs", type=int, default=50)
     parser.add_argument("--ppca-rho", type=float, default=10.)
+    parser.add_argument("--transfer-pathfe-ranks", action="store_true",
+                        help="use PathFE's common and client-private ranks for KT and PerPCA")
+    parser.add_argument("--reference-common-rank", type=int, default=None)
+    parser.add_argument("--reference-total-ranks", default=None,
+                        help="list of per-client total ranks or path to a text file")
     args = parser.parse_args()
     if args.data_root is None:
         args.data_root = str(ROOT / "local" / "data" / ("cifar10" if args.dataset == "cifar10" else "femnist"))

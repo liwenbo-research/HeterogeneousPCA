@@ -12,6 +12,24 @@ from feature_extraction import FE
 from pca_utils import PCAUtils
 
 
+def _top_projected_basis(X, complement, rank):
+    n, p = X.shape
+    projected = X @ complement
+    if n < p:
+        gram = (projected @ projected.T) / max(n, 1)
+        values, left = np.linalg.eigh((gram + gram.T) * 0.5)
+        order = np.argsort(values)[::-1][:rank]
+        selected = np.maximum(values[order], 0.0)
+        valid = selected > 1e-12
+        basis = projected.T @ left[:, order[valid]]
+        if np.any(valid):
+            basis /= np.sqrt(max(n, 1) * selected[valid])[None, :]
+        return basis
+    residual = projected.T @ projected / max(n, 1)
+    values, vectors = np.linalg.eigh(residual)
+    return vectors[:, np.argsort(values)[::-1][:rank]]
+
+
 def extract_complete_paths(pairs_list, ratio_list, thresholds):
     """Return vertex-disjoint, full-client paths ranked by total edge ratio.
 
@@ -94,11 +112,27 @@ class PathFE(FE):
 
         pairs_list, ratio_list, thresholds = [], [], []
         spectra = []
-        for X in X_list:
-            covariance = X.T @ X / max(X.shape[0], 1)
-            values, vectors = np.linalg.eigh(covariance)
-            order = np.argsort(values)[::-1]
-            spectra.append((values[order], vectors[:, order], X.shape[0]))
+        for X, rank in zip(X_list, num_list):
+            rank = max(0, min(int(rank), p))
+            n = max(X.shape[0], 1)
+            if X.shape[0] < p:
+                values, left = np.linalg.eigh((X @ X.T) / n)
+                order = np.argsort(values)[::-1]
+                values = np.maximum(values[order], 0.0)
+                left = left[:, order]
+                vectors = X.T @ left[:, :rank]
+                norms = np.linalg.norm(vectors, axis=0)
+                valid = norms > 1e-12
+                vectors[:, valid] /= norms[valid]
+                vectors = vectors[:, valid]
+                full_values = np.zeros(p)
+                full_values[:len(values)] = values
+                spectra.append((full_values, vectors, X.shape[0]))
+            else:
+                covariance = X.T @ X / n
+                values, vectors = np.linalg.eigh(covariance)
+                order = np.argsort(values)[::-1]
+                spectra.append((values[order], vectors[:, order[:rank]], X.shape[0]))
         for i, pair_epsilon in enumerate(pair_epsilons):
             values_X, vectors_X, n_X = spectra[i]
             values_Y, vectors_Y, n_Y = spectra[i + 1]
@@ -119,15 +153,15 @@ class PathFE(FE):
         # Re-estimate the shared space from a sample-size-weighted projector
         # barycenter. This reduces the influence of noisy small clients while
         # preserving PathFE's path selection itself.
-        self.est_cf, self.global_factors, self.est_cf_Proj = self._weighted_common_feature(X_list, location)
+        self.est_cf, self.global_factors, self.est_cf_Proj = self._weighted_common_feature(
+            X_list, location, spectra
+        )
         complement = np.eye(p) - (self.est_cf_Proj if self.est_cf_Proj.size else np.zeros((p, p)))
         pf_list, pf_proj_list = [], []
         for X, rank in zip(X_list, num_list):
-            residual = complement @ (X.T @ X / max(X.shape[0], 1)) @ complement
             local_rank = max(int(rank) - self.num_cf, 0)
             if local_rank:
-                vals, vecs = np.linalg.eigh(residual)
-                pf = vecs[:, np.argsort(vals)[::-1][:local_rank]]
+                pf = _top_projected_basis(X, complement, local_rank)
                 pf_proj = pf @ pf.T
             else:
                 pf = np.zeros((p, 0))
@@ -138,19 +172,18 @@ class PathFE(FE):
         self.est_pf_proj = np.stack(pf_proj_list, axis=0)
         return self
 
-    def _weighted_common_feature(self, data_list, location):
+    def _weighted_common_feature(self, data_list, location, spectra=None):
         num_cf = len(location)
         p = int(data_list[0].shape[1])
         if num_cf == 0:
             return np.zeros((p, 0)), np.zeros((p, 0)), np.zeros((p, p))
         weights = np.asarray([x.shape[0] for x in data_list], dtype=float)
-        avg = np.zeros((p, p), dtype=float)
+        weighted_bases = []
         for i, X in enumerate(data_list):
-            eigvecs = PCAUtils.compute_eigenvectors(X)
+            eigvecs = (spectra[i][1] if spectra is not None
+                       else PCAUtils.compute_eigenvectors(X))
             cf = eigvecs[:, np.asarray(location)[:, i]]
-            avg += weights[i] * (cf @ cf.T)
-        avg /= max(weights.sum(), 1.0)
-        vals, vecs = np.linalg.eigh(avg)
-        order = np.argsort(vals)[::-1][:num_cf]
-        est_cf = vecs[:, order]
+            weighted_bases.append(cf * np.sqrt(weights[i] / max(weights.sum(), 1.0)))
+        basis_matrix = np.concatenate(weighted_bases, axis=1)
+        est_cf = np.linalg.svd(basis_matrix, full_matrices=False)[0][:, :num_cf]
         return est_cf, np.sqrt(p) * est_cf, est_cf @ est_cf.T

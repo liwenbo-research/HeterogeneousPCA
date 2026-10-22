@@ -10,10 +10,10 @@ from spike_num import SpikeNum
 
 
 class KeEstimate(SpikeNum):
-    """BEMA0 from Ke, Ma, and Lin (2021).
+    """BEMA from Ke, Ma, and Lin (2023).
 
-    This implements Algorithm 1 from the paper for the standard spiked
-    covariance model with scalar residual variance.
+    ``estimate_standard`` implements scalar-noise BEMA0 (Algorithm 1);
+    ``estimate_general`` implements Gamma-bulk BEMA (Algorithm 2).
     """
 
     def __init__(self):

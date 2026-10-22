@@ -15,6 +15,12 @@ reconstructions.
 Simulation-4/Wang case-1 outputs, scripts, and related logs are under
 `archive/simulation-4/` and are retained only for provenance.
 
+`results/real_data/housing/` contains the state-level ranks and method metrics
+from `real_data/UnitedStatesHousing-PathFE.py`, along with the residual
+correlation plot. FEMNIST reconstruction image exports are kept under
+`archive/real-data-reconstruction/`; the corresponding experiment CSVs remain in
+`results/real_data/`.
+
 Older scans, failed runs, logs, LaTeX build products, and alternative result
 variants remain under `archive/` for provenance and are not recommended as
 primary results.

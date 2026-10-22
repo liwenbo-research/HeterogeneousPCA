@@ -12,9 +12,9 @@ class GCC():
         n_samples = [Data_list[s].shape[0] for s in range(num_client)]
         p = Data_list[0].shape[1]
         all_factors = [np.sqrt(p) * self._compute_sig_values_vectors(Data_list[k], self.num_spike_list[k])[1] for k in range(num_client)]
-        Phi = self._get_phi(all_factors)
+        gram = self._get_phi_gram(all_factors)
 
-        eigen_values, eigen_vectores = np.linalg.eigh(Phi.T@Phi)
+        eigen_values, eigen_vectores = np.linalg.eigh(gram)
         idx = np.argsort(eigen_values)
         eigen_values = eigen_values[idx]
         eigen_vectores = eigen_vectores[:, idx]
@@ -78,6 +78,22 @@ class GCC():
                 row += T
 
         return Phi
+
+    def _get_phi_gram(self, K_list):
+        """Compute ``Phi.T @ Phi`` without materializing the pairwise Phi."""
+        num_client = len(K_list)
+        dimensions = [K.shape[1] for K in K_list]
+        offsets = np.cumsum([0] + dimensions)
+        gram = np.zeros((offsets[-1], offsets[-1]), dtype=float)
+        for i, Ki in enumerate(K_list):
+            i0, i1 = offsets[i:i + 2]
+            gram[i0:i1, i0:i1] = (num_client - 1) * (Ki.T @ Ki)
+            for j in range(i + 1, num_client):
+                j0, j1 = offsets[j:j + 2]
+                cross = -(Ki.T @ K_list[j])
+                gram[i0:i1, j0:j1] = cross
+                gram[j0:j1, i0:i1] = cross.T
+        return gram
 
     def common_factors(self):
         return self.global_factors

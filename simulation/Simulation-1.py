@@ -23,14 +23,16 @@ parser.add_argument('--seed', type=int, default=None, help="随机种子 (默认
 parser.add_argument('--ratio', type=float, default=0.2, help="ratio")
 parser.add_argument('--bulk', type=int, default=2, help="bulk的个数")
 parser.add_argument('--bulk-values', type=str, default='1.7,1.5', help="bulk 特征值，逗号分隔")
-parser.add_argument('--bulk-model', choices=('diagonal', 'gamma', 'gamma_correlated', 'multicluster', 'toeplitz'), default='diagonal', help="残差 bulk 模型")
+parser.add_argument('--bulk-model', choices=('diagonal', 'gamma', 'gamma_correlated', 'ar1', 'multicluster', 'toeplitz'), default='diagonal', help="残差 bulk 模型")
 parser.add_argument('--gamma-theta', type=float, default=3.0, help="BEMA Gamma bulk 的 shape theta")
 parser.add_argument('--gamma-sigma-sq', type=float, default=1.0, help="BEMA Gamma bulk 的均值 sigma^2")
 parser.add_argument('--scenario-name', type=str, default='default', help="写入结果与文件名的实验场景标签")
 parser.add_argument('--spike-values', type=str, default=None, help="spike 强度，逗号分隔；默认按 weak/strongspike 设置")
 parser.add_argument('--correlated-bulk-size', type=int, default=0, help="低方差等相关 bulk 块的维度；0 表示不使用")
 parser.add_argument('--correlated-bulk-variance', type=float, default=0.15, help="低方差相关 bulk 块的边际方差")
-parser.add_argument('--correlated-bulk-rho', type=float, default=0.0, help="低方差相关 bulk 块的等相关系数")
+parser.add_argument('--correlated-bulk-rho', type=float, default=0.0, help="低方差相关 bulk 块的 AR(1) 系数")
+parser.add_argument('--correlated-bulk-structure', choices=('ar1', 'equicorr'), default='ar1',
+                    help="相关 bulk 块结构，默认使用 AR(1)")
 parser.add_argument('--cluster-count', type=int, default=2, help="multicluster 的等相关簇数")
 parser.add_argument('--cluster-size', type=int, default=30, help="multicluster 的每簇维度")
 parser.add_argument('--cluster-variance', type=float, default=0.12, help="multicluster 的边际方差")
@@ -38,9 +40,13 @@ parser.add_argument('--cluster-rho', type=float, default=0.04, help="multicluste
 parser.add_argument('--toeplitz-size', type=int, default=80, help="toeplitz bulk 块的维度")
 parser.add_argument('--toeplitz-variance', type=float, default=0.12, help="toeplitz bulk 块的边际方差")
 parser.add_argument('--toeplitz-rho', type=float, default=0.35, help="toeplitz bulk 块的 AR(1) 相关系数")
+parser.add_argument('--ar1-variance', type=float, default=1.0, help="纯 AR(1) bulk 的边际方差")
+parser.add_argument('--ar1-rho', type=float, default=0.3, help="纯 AR(1) bulk 的相关系数")
 parser.add_argument('--gamma-correlated-size', type=int, default=40, help="Gamma bulk 后附加的相关残差块维度")
 parser.add_argument('--gamma-correlated-variance', type=float, default=0.15, help="Gamma 相关残差块边际方差")
-parser.add_argument('--gamma-correlated-rho', type=float, default=0.03, help="Gamma 相关残差块等相关系数")
+parser.add_argument('--gamma-correlated-rho', type=float, default=0.03, help="Gamma 相关残差块 AR(1) 系数")
+parser.add_argument('--gamma-correlated-structure', choices=('ar1', 'equicorr'), default='ar1',
+                    help="Gamma 相关残差块结构，默认使用 AR(1)")
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -92,12 +98,15 @@ spike_values = None if args.spike_values is None else [float(value.strip()) for 
 correlated_bulk_size = args.correlated_bulk_size
 correlated_bulk_variance = args.correlated_bulk_variance
 correlated_bulk_rho = args.correlated_bulk_rho
+correlated_bulk_structure = args.correlated_bulk_structure
 cluster_count, cluster_size = args.cluster_count, args.cluster_size
 cluster_variance, cluster_rho = args.cluster_variance, args.cluster_rho
 toeplitz_size, toeplitz_variance, toeplitz_rho = args.toeplitz_size, args.toeplitz_variance, args.toeplitz_rho
+ar1_variance, ar1_rho = args.ar1_variance, args.ar1_rho
 gamma_correlated_size = args.gamma_correlated_size
 gamma_correlated_variance = args.gamma_correlated_variance
 gamma_correlated_rho = args.gamma_correlated_rho
+gamma_correlated_structure = args.gamma_correlated_structure
 
 if a1 <= 0 or a2 <= 0:
     parser.error('--a1 and --a2 must be positive')
@@ -113,6 +122,8 @@ if cluster_count < 1 or cluster_size < 2 or cluster_variance <= 0 or not (-1 / (
     parser.error('invalid multicluster parameters')
 if toeplitz_size < 2 or toeplitz_variance <= 0 or not (-1 < toeplitz_rho < 1):
     parser.error('invalid toeplitz parameters')
+if ar1_variance <= 0 or not (-1 < ar1_rho < 1):
+    parser.error('invalid AR(1) parameters')
 if spike_values is not None and (len(spike_values) != 2 or any(value <= 0 for value in spike_values)):
     parser.error('--spike-values must contain two positive values')
    
@@ -176,6 +187,7 @@ else:
     rho_label = f"{correlated_bulk_rho:g}".replace(".", "p")
     correlated_bulk_label = (
         f"correlated-bulk-m{correlated_bulk_size}-v{variance_label}-rho{rho_label}"
+        f"-{correlated_bulk_structure}"
     )
 scenario_label = scenario_name.replace("/", "-").replace(" ", "-")
 spike_label = "default-spikes" if spike_values is None else ("spikes" + "-".join(f"{value:g}" for value in spike_values))
@@ -183,9 +195,10 @@ bulk_model_label = (
     correlated_bulk_label
     if bulk_model == "diagonal"
     else (f"gamma-bulk-theta{gamma_theta:g}-sigma{gamma_sigma_sq:g}".replace(".", "p") if bulk_model == "gamma"
-          else (f"gamma-correlated-m{gamma_correlated_size}-v{gamma_correlated_variance:g}-rho{gamma_correlated_rho:g}".replace(".", "p") if bulk_model == "gamma_correlated"
+          else (f"gamma-correlated-{gamma_correlated_structure}-m{gamma_correlated_size}-v{gamma_correlated_variance:g}-rho{gamma_correlated_rho:g}".replace(".", "p") if bulk_model == "gamma_correlated"
+          else (f"ar1-v{ar1_variance:g}-rho{ar1_rho:g}".replace(".", "p") if bulk_model == "ar1"
           else (f"multicluster-c{cluster_count}-m{cluster_size}-v{cluster_variance:g}-rho{cluster_rho:g}".replace(".", "p") if bulk_model == "multicluster"
-                else f"toeplitz-m{toeplitz_size}-v{toeplitz_variance:g}-rho{toeplitz_rho:g}".replace(".", "p"))))
+                else f"toeplitz-m{toeplitz_size}-v{toeplitz_variance:g}-rho{toeplitz_rho:g}".replace(".", "p")))))
 )
 csv_file = os.path.join(
     results_dir,
@@ -236,6 +249,7 @@ def run_single(
     correlated_bulk_size,
     correlated_bulk_variance,
     correlated_bulk_rho,
+    correlated_bulk_structure,
     bulk_model,
     gamma_theta,
     gamma_sigma_sq,
@@ -269,7 +283,12 @@ def run_single(
             correlated_size=gamma_correlated_size,
             correlated_variance=gamma_correlated_variance,
             correlated_rho=gamma_correlated_rho,
+            correlated_structure=gamma_correlated_structure,
             random_state=seed,
+        )
+    elif bulk_model == "ar1":
+        Sigma = PCAUtils.create_sigma_matrix_ar1_bulk(
+            dim, lam, p, variance=ar1_variance, rho=ar1_rho,
         )
     elif bulk_model == "multicluster":
         cluster = cluster_variance * ((1 - cluster_rho) * np.eye(cluster_size) + cluster_rho * np.ones((cluster_size, cluster_size)))
@@ -288,6 +307,7 @@ def run_single(
             correlated_bulk_size=correlated_bulk_size,
             correlated_bulk_variance=correlated_bulk_variance,
             correlated_bulk_rho=correlated_bulk_rho,
+            correlated_bulk_structure=correlated_bulk_structure,
         )
     X = PCAUtils.generate_data_1(Sigma, n=n, df=df, normal=normal, distribution=distribution)
 
@@ -358,6 +378,7 @@ for p in tqdm(p_list, desc=f"p loop (ratio={n_ratio})", leave=False, unit="p"):
             correlated_bulk_size,
             correlated_bulk_variance,
             correlated_bulk_rho,
+            correlated_bulk_structure,
             bulk_model,
             gamma_theta,
             gamma_sigma_sq,
@@ -397,6 +418,7 @@ for p in tqdm(p_list, desc=f"p loop (ratio={n_ratio})", leave=False, unit="p"):
         "gamma_correlated_size": gamma_correlated_size if bulk_model == "gamma_correlated" else np.nan,
         "gamma_correlated_variance": gamma_correlated_variance if bulk_model == "gamma_correlated" else np.nan,
         "gamma_correlated_rho": gamma_correlated_rho if bulk_model == "gamma_correlated" else np.nan,
+        "gamma_correlated_structure": gamma_correlated_structure if bulk_model == "gamma_correlated" else np.nan,
         "cluster_count": cluster_count if bulk_model == "multicluster" else np.nan,
         "cluster_size": cluster_size if bulk_model == "multicluster" else np.nan,
         "cluster_variance": cluster_variance if bulk_model == "multicluster" else np.nan,
@@ -404,9 +426,12 @@ for p in tqdm(p_list, desc=f"p loop (ratio={n_ratio})", leave=False, unit="p"):
         "toeplitz_size": toeplitz_size if bulk_model == "toeplitz" else np.nan,
         "toeplitz_variance": toeplitz_variance if bulk_model == "toeplitz" else np.nan,
         "toeplitz_rho": toeplitz_rho if bulk_model == "toeplitz" else np.nan,
+        "ar1_variance": ar1_variance if bulk_model == "ar1" else np.nan,
+        "ar1_rho": ar1_rho if bulk_model == "ar1" else np.nan,
         "correlated_bulk_size": correlated_bulk_size,
         "correlated_bulk_variance": correlated_bulk_variance,
         "correlated_bulk_rho": correlated_bulk_rho,
+        "correlated_bulk_structure": correlated_bulk_structure,
         "combine_rule": combine_rule,
         "ke_model": "bema_general",
         "ke_quantile_samples": ke_quantile_samples,
