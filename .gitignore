@@ -29,8 +29,8 @@ PerPCA/
 # Local vendored dependency and datasets (kept on this machine only)
 local/
 
-# Generated results not explicitly curated for release
-results/**/generated/
+# Experiment outputs stay local and are not tracked in Git
+results/
 
 # Local provenance archive; only its public-facing explanation is tracked
 archive/**

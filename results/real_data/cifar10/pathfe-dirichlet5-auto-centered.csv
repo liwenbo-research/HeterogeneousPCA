@@ -1,3 +1,0 @@
-method,split,num_common,reconstruction_error_global,reconstruction_error_global_plus_local
-pathfe,train,0,190.20426770371702,190.20426770371702
-pathfe,test,0,190.00504096967646,190.00504096967646

@@ -1,3 +1,0 @@
-method,split,num_common,reconstruction_error_global,reconstruction_error_global_plus_local
-gcc,train,1,141.73923198103358,26.690706890700557
-gcc,test,1,141.376704042854,28.57832730733264

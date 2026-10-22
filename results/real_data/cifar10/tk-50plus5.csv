@@ -1,3 +1,0 @@
-method,split,num_common,reconstruction_error_global,reconstruction_error_global_plus_local
-tk,train,50,30.026555829254665,30.026555829254665
-tk,test,50,30.094128915583102,30.094128915583102
